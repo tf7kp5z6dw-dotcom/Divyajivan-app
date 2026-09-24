@@ -2339,7 +2339,7 @@ return(
 );};
 
 /* ── MAIN APP ── */
-const APP_VERSION='4.1.0';
+const APP_VERSION='4.2.0';
 
 /* ── AUTH SCREENS ── */
 const AuthInput=({label,type,value,onChange,placeholder,icon})=>(
@@ -3126,6 +3126,106 @@ return(
 </button>
 ))}
 </div>}
+</div>
+);};
+
+/* ── SCREEN: ADMIN ORDER MANAGEMENT ── */
+const ADMIN_STATUSES=['confirmed','processing','shipped','delivered','cancelled'];
+const ADMIN_STATUS_COLORS={confirmed:'#3B82F6',processing:'#F59E0B',shipped:'#8B5CF6',delivered:'#0FA572',cancelled:'#EF4444'};
+const ADMIN_STATUS_ICONS={confirmed:'check_circle',processing:'sync',shipped:'local_shipping',delivered:'done_all',cancelled:'cancel'};
+const AdminOrdersScreen=({onBack,session,showToast})=>{
+const[tab,setTab]=useState('orders');
+const[allOrders,setAllOrders]=useState([]);
+const[allAppts,setAllAppts]=useState([]);
+const[loading,setLoading]=useState(true);
+const loadAll=async()=>{setLoading(true);try{
+const{data:ords}=await supabaseClient.from('orders').select('*').order('created_at',{ascending:false});
+const{data:appts}=await supabaseClient.from('appointments').select('*').order('booked_at',{ascending:false});
+setAllOrders(ords||[]);setAllAppts(appts||[]);
+}catch(e){console.log('Admin load error:',e)}setLoading(false)};
+useEffect(()=>{loadAll()},[]);
+const updateOrderStatus=async(id,newStatus)=>{
+const{error}=await supabaseClient.from('orders').update({status:newStatus}).eq('id',id);
+if(error){showToast('Update failed');return}
+setAllOrders(prev=>prev.map(o=>o.id===id?{...o,status:newStatus}:o));
+showToast('Order → '+newStatus.charAt(0).toUpperCase()+newStatus.slice(1))};
+const updateApptStatus=async(id,newStatus)=>{
+const{error}=await supabaseClient.from('appointments').update({status:newStatus}).eq('id',id);
+if(error){showToast('Update failed');return}
+setAllAppts(prev=>prev.map(a=>a.id===id?{...a,status:newStatus}:a));
+showToast('Appointment → '+newStatus.charAt(0).toUpperCase()+newStatus.slice(1))};
+const fmtD=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'})};
+return(
+<div className="fade-in">
+<div className="flex items-center justify-between px-4 py-3">
+<div className="flex items-center gap-2">
+<button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="arrow_back" size={22} className="text-slate-700"/></button>
+<span className="text-lg font-bold text-slate-800">Admin Panel</span>
+</div>
+<button onClick={loadAll} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="refresh" size={22} className="text-pri-600"/></button>
+</div>
+<div className="flex gap-2 px-4 mb-4">
+{[{id:'orders',label:'Orders',icon:'shopping_bag'},{id:'appointments',label:'Appointments',icon:'calendar_month'}].map(t=>(
+<button key={t.id} onClick={()=>setTab(t.id)} className={`flex-1 py-2.5 rounded-full text-sm font-semibold flex items-center justify-center gap-1.5 transition-all ${tab===t.id?'bg-pri-600 text-white shadow-sm':'bg-slate-100 text-slate-600'}`}>
+<I name={t.icon} size={16}/>{t.label} ({t.id==='orders'?allOrders.length:allAppts.length})
+</button>
+))}
+</div>
+{loading?<div className="flex justify-center py-12"><div style={{width:32,height:32,border:'3px solid #E6F7F1',borderTopColor:'#0FA572',borderRadius:'50%',animation:'spin .7s linear infinite'}}/></div>:
+tab==='orders'?(
+<div className="px-4 space-y-3">
+{allOrders.length===0?<p className="text-center text-slate-400 py-12 text-sm">No orders yet</p>:
+allOrders.map(o=>(
+<div key={o.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+<div className="flex items-center justify-between mb-2">
+<p className="text-xs font-bold text-slate-600">{o.id}</p>
+<div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{backgroundColor:ADMIN_STATUS_COLORS[o.status]+'18'}}>
+<I name={ADMIN_STATUS_ICONS[o.status]||'help'} size={14} style={{color:ADMIN_STATUS_COLORS[o.status]||'#888'}}/>
+<span className="text-xs font-bold" style={{color:ADMIN_STATUS_COLORS[o.status]||'#888'}}>{(o.status||'unknown').charAt(0).toUpperCase()+(o.status||'').slice(1)}</span>
+</div>
+</div>
+<p className="text-sm text-slate-500 mb-1">Total: <span className="font-bold text-slate-800">₹{o.total}</span> · {fmtD(o.created_at)}</p>
+<p className="text-xs text-slate-400 mb-3">Items: {(o.items||[]).map(i=>i.name).join(', ')||'—'}</p>
+<div className="flex flex-wrap gap-1.5">
+{ADMIN_STATUSES.map(s=>(
+<button key={s} onClick={()=>updateOrderStatus(o.id,s)} disabled={o.status===s}
+className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${o.status===s?'border-2':'border hover:scale-105'}`}
+style={{borderColor:ADMIN_STATUS_COLORS[s],color:o.status===s?'#fff':ADMIN_STATUS_COLORS[s],backgroundColor:o.status===s?ADMIN_STATUS_COLORS[s]:'transparent',opacity:o.status===s?1:0.85}}>
+{s.charAt(0).toUpperCase()+s.slice(1)}
+</button>
+))}
+</div>
+</div>
+))}
+</div>
+):(
+<div className="px-4 space-y-3">
+{allAppts.length===0?<p className="text-center text-slate-400 py-12 text-sm">No appointments yet</p>:
+allAppts.map(a=>(
+<div key={a.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+<div className="flex items-center justify-between mb-2">
+<p className="text-sm font-bold text-slate-800">{a.doctor||'Doctor'}</p>
+<div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{backgroundColor:a.status==='cancelled'?'#FEF2F2':a.status==='completed'?'#E6F7F1':'#EFF6FF'}}>
+<I name={a.status==='cancelled'?'cancel':a.status==='completed'?'done_all':'event_available'} size={14} style={{color:a.status==='cancelled'?'#EF4444':a.status==='completed'?'#0FA572':'#3B82F6'}}/>
+<span className="text-xs font-bold" style={{color:a.status==='cancelled'?'#EF4444':a.status==='completed'?'#0FA572':'#3B82F6'}}>{(a.status||'').charAt(0).toUpperCase()+(a.status||'').slice(1)}</span>
+</div>
+</div>
+<p className="text-sm text-slate-500">Patient: <span className="font-semibold text-slate-700">{a.patient}</span></p>
+<p className="text-xs text-slate-400 mb-3">{fmtD(a.date)} · {a.time} · {a.type}</p>
+<div className="flex gap-1.5">
+{['confirmed','completed','cancelled'].map(s=>(
+<button key={s} onClick={()=>updateApptStatus(a.id,s)} disabled={a.status===s}
+className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${a.status===s?'border-2':'border hover:scale-105'}`}
+style={{borderColor:s==='cancelled'?'#EF4444':s==='completed'?'#0FA572':'#3B82F6',color:a.status===s?'#fff':s==='cancelled'?'#EF4444':s==='completed'?'#0FA572':'#3B82F6',backgroundColor:a.status===s?(s==='cancelled'?'#EF4444':s==='completed'?'#0FA572':'#3B82F6'):'transparent',opacity:a.status===s?1:0.85}}>
+{s.charAt(0).toUpperCase()+s.slice(1)}
+</button>
+))}
+</div>
+</div>
+))}
+</div>
+)}
+<div className="h-6"/>
 </div>
 );};
 
