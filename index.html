@@ -1705,7 +1705,7 @@ return(
 </div>
 );};
 
-const MyOrdersScreen=({onBack,orders,onOrderDetail})=>{
+const MyOrdersScreen=({onBack,orders,onOrderDetail,onRefresh})=>{
 const[tab,setTab]=useState('active');
 const enriched=orders.map(enrichOrder);
 const active=enriched.filter(o=>o.status==='confirmed'||o.status==='processing'||o.status==='shipped');
@@ -1713,7 +1713,13 @@ const past=enriched.filter(o=>o.status==='delivered'||o.status==='cancelled');
 const list=tab==='active'?active:past;
 return(
 <div className="fade-in">
-<SubHeader title="My Orders" onBack={onBack}/>
+<div className="flex items-center justify-between px-4 py-3">
+<div className="flex items-center gap-2">
+<button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="arrow_back" size={22} className="text-slate-700"/></button>
+<span className="text-lg font-bold text-slate-800">My Orders</span>
+</div>
+{onRefresh&&<button onClick={onRefresh} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="refresh" size={22} className="text-pri-600"/></button>}
+</div>
 <div className="flex gap-2 px-4 mb-4">
 {[{id:'active',label:'Active'},{id:'past',label:'Past'}].map(t=>(
 <button key={t.id} onClick={()=>setTab(t.id)} className={`flex-1 py-2.5 rounded-full text-sm font-semibold transition-all ${tab===t.id?'bg-pri-600 text-white shadow-sm':'bg-slate-100 text-slate-600'}`}>{t.label}{t.id==='active'&&active.length>0?` (${active.length})`:''}</button>
@@ -2559,6 +2565,7 @@ const points=useJivanPoints();
 const addChatMsg=(msg)=>{setChatHistory(prev=>{const n=[...prev,msg];try{localStorage.setItem('dj_chat_history',JSON.stringify(n.slice(-50)))}catch(e){}return n})};
 
 const showToast=(msg)=>{setToast(msg);setTimeout(()=>setToast(''),2000)};
+const refreshData=async()=>{if(!session)return;const uid=session.user.id;try{const[ords,appts]=await Promise.all([db.loadOrders(uid),db.loadAppointments(uid)]);setOrders(ords);setAppointments(appts);showToast('Data refreshed!')}catch(e){showToast('Refresh failed')}};
 
 const nav=(page,data)=>{
 setHistory(h=>[...h,screen]);
@@ -2640,8 +2647,8 @@ case 'lab-detail':return detail?<LabTestDetailScreen item={detail} onBack={goBac
 case 'doc-detail':return detail?<DoctorDetailScreen item={detail} onBack={goBack} nav={nav}/>:null;
 case 'cart':return <CartScreen cart={cart} onBack={goBack} updateQty={updateQty} removeItem={removeItem} onCheckout={handleCheckout} points={points} usePoints={usePoints} setUsePoints={setUsePoints}/>;
 case 'health-records':return <HealthRecordsScreen onBack={goBack}/>;
-case 'my-orders':return <MyOrdersScreen onBack={goBack} orders={orders} onOrderDetail={(o)=>{setHistory(h=>[...h,screen]);setDetail(o);setScreen('order-detail');if(scrollRef.current)scrollRef.current.scrollTop=0}}/>;
-case 'order-detail':return detail?<OrderDetailScreen onBack={goBack} order={detail} showToast={showToast} onReorder={(items)=>{items.forEach(it=>{const med=MEDICINES.find(m=>m.name===it.name);if(med)addToCart(med)});nav('cart')}} onUpdateOrder={(id,updates)=>{setOrders(prev=>prev.map(o=>o.id===id?{...o,...updates}:o));setDetail(prev=>prev&&prev.id===id?{...prev,...updates}:prev);if(session)supabaseClient.from('orders').update({status:updates.status||'confirmed'}).eq('id',id).then(()=>{})}}/>:null;
+case 'my-orders':return <MyOrdersScreen onBack={goBack} orders={orders} onRefresh={refreshData} onOrderDetail={(o)=>{setHistory(h=>[...h,screen]);setDetail(o);setScreen('order-detail');if(scrollRef.current)scrollRef.current.scrollTop=0}}/>;
+case 'order-detail':return detail?<OrderDetailScreen onBack={goBack} order={detail} showToast={showToast} onReorder={(items)=>{items.forEach(it=>{const med=MEDICINES.find(m=>m.name===it.name);if(med)addToCart(med)});nav('cart')}} onUpdateOrder={(id,updates)=>{setOrders(prev=>prev.map(o=>o.id===id?{...o,...updates}:o));setDetail(prev=>prev&&prev.id===id?{...prev,...updates}:prev);if(session){const dbUp={};if(updates.status)dbUp.status=updates.status;supabaseClient.from('orders').update(dbUp).eq('id',id).then(()=>{})}}}/>:null;
 case 'membership':return <MembershipScreen onBack={goBack}/>;
 case 'insurance':return <InsuranceScreen onBack={goBack} showToast={showToast}/>;
 case 'telemedicine':return <TelemedicineScreen onBack={goBack}/>;
@@ -2653,7 +2660,7 @@ case 'points-rules':return <PointsRulesScreen onBack={goBack}/>;
 case 'ai-chat':return <AIHealthAssistantScreen onBack={goBack} chatHistory={chatHistory} onAskAI={addChatMsg}/>;
 case 'doc-chat':return detail?<DoctorChatScreen doctor={detail} onBack={goBack}/>:null;
 case 'book-appt':return detail?<BookAppointmentScreen doctor={detail} onBack={goBack} showToast={showToast} family={family} userProfile={userProfile} session={session} appointments={appointments} setAppointments={setAppointments}/>:null;
-case 'my-consultations':return <MyConsultationsScreen onBack={goBack} nav={nav} session={session} appointments={appointments} setAppointments={setAppointments}/>;
+case 'my-consultations':return <MyConsultationsScreen onBack={goBack} nav={nav} session={session} appointments={appointments} setAppointments={setAppointments} onRefresh={refreshData}/>;
 case 'family-members':return <FamilyMembersScreen family={family} updateFamily={updateFamily} onBack={goBack} showToast={showToast} nav={nav}/>;
 case 'your-profile':return <YourProfileScreen onBack={goBack} userProfile={userProfile} updateUserProfile={updateUserProfile} showToast={showToast}/>;
 case 'family-profile':return detail?<FamilyMemberProfileScreen member={detail} onBack={goBack} family={family} updateFamily={updateFamily} showToast={showToast} userProfile={userProfile}/>:null;
@@ -3052,7 +3059,7 @@ return(
 );};
 
 /* ── SCREEN: MY CONSULTATIONS ── */
-const MyConsultationsScreen=({onBack,nav,session,appointments,setAppointments})=>{
+const MyConsultationsScreen=({onBack,nav,session,appointments,setAppointments,onRefresh})=>{
 const[tab,setTab]=useState('appointments');
 const appts=appointments;
 const chatDocs=useMemo(()=>{const ids=[];DOCTORS.forEach(d=>{try{const c=JSON.parse(localStorage.getItem('dj_doc_chat_'+d.id)||'[]');if(c.length>0)ids.push({...d,lastMsg:c[c.length-1]})}catch(e){}});return ids},[]);
@@ -3062,7 +3069,10 @@ return(
 <div className="fade-in">
 <div className="flex items-center justify-between px-4 py-3">
 <span className="text-lg font-bold text-slate-800">My Consultations</span>
+<div className="flex items-center gap-1">
+{onRefresh&&<button onClick={onRefresh} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="refresh" size={22} className="text-pri-600"/></button>}
 <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100"><I name="close" size={22} className="text-slate-700"/></button>
+</div>
 </div>
 <div className="h-px bg-slate-100"/>
 {/* Tabs */}
