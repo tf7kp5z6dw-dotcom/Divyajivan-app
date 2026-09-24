@@ -155,6 +155,20 @@ const SUPABASE_URL='https://dyozistihhqwrykpknpr.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5b3ppc3RpaGhxd3J5a3BrbnByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMzkyOTgsImV4cCI6MjEwNTgxNTI5OH0.st0MlZW-LS9RHkeZThtJF1FAI3OQkk9ryEtyu1M0O0o';
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 
+/* ── SUPABASE DB HELPERS ── */
+const db={
+async loadProfile(userId){const{data}=await supabaseClient.from('profiles').select('*').eq('id',userId).single();return data},
+async saveProfile(userId,p){const row={id:userId,name:p.name||'',age:p.age||null,gender:p.gender||'',member_id:p.memberId||'',initials:p.initials||'',dob:p.dob||'',blood_group:p.bloodGroup||'',mobile:p.mobile||'',address:p.address||{},membership:p.membership||{},hospital:p.hospitalNo||{},updated_at:new Date().toISOString()};await supabaseClient.from('profiles').upsert(row)},
+profileToApp(r){if(!r)return null;return{name:r.name||'',age:r.age||0,gender:r.gender||'',memberId:r.member_id||'',initials:r.initials||'',dob:r.dob||'',bloodGroup:r.blood_group||'',mobile:r.mobile||'',address:r.address||{},membership:r.membership||{},hospitalNo:r.hospital||{}}},
+async loadFamily(userId){const{data}=await supabaseClient.from('family_members').select('*').eq('user_id',userId).order('created_at');return(data||[]).map(r=>({id:r.id,name:r.name,age:r.age,gender:r.gender,initials:r.initials,color:r.color,dob:r.dob,bloodGroup:r.blood_group,mobile:r.mobile}))},
+async saveFamily(userId,members){await supabaseClient.from('family_members').delete().eq('user_id',userId);if(members.length>0){const rows=members.map(m=>({id:m.id||('f'+Date.now()+Math.random().toString(36).slice(2,6)),user_id:userId,name:m.name,age:m.age||null,gender:m.gender||'',initials:m.initials||'',color:m.color||'',dob:m.dob||'',blood_group:m.bloodGroup||'',mobile:m.mobile||''}));await supabaseClient.from('family_members').insert(rows)}},
+async loadAppointments(userId){const{data}=await supabaseClient.from('appointments').select('*').eq('user_id',userId).order('booked_at',{ascending:false});return(data||[]).map(r=>({id:r.id,doctor:r.doctor,patient:r.patient,date:r.date,time:r.time,status:r.status,type:r.type,bookedAt:r.booked_at}))},
+async saveAppointment(userId,appt){await supabaseClient.from('appointments').insert({id:appt.id,user_id:userId,doctor:appt.doctor,patient:appt.patient,date:appt.date,time:appt.time,status:appt.status,type:appt.type,booked_at:new Date(appt.bookedAt).toISOString()})},
+async updateAppointment(id,updates){await supabaseClient.from('appointments').update(updates).eq('id',id)},
+async loadOrders(userId){const{data}=await supabaseClient.from('orders').select('*').eq('user_id',userId).order('created_at',{ascending:false});return(data||[]).map(r=>({id:r.id,items:r.items||[],total:r.total,pointsSaved:r.points_saved,status:r.status,date:new Date(r.created_at).getTime()}))},
+async saveOrder(userId,order){await supabaseClient.from('orders').insert({id:order.id,user_id:userId,items:order.items,total:order.total,points_saved:order.pointsSaved||0,status:order.status})}
+};
+
 /* ── ICON COMPONENT ── */
 const I=({name,className='',size=24,onClick,filled})=>(
 <span className={`${filled?'material-icons':'material-icons-outlined'} ${className}`} style={{fontSize:size,lineHeight:1}} onClick={onClick}>{name}</span>
@@ -2319,7 +2333,7 @@ return(
 );};
 
 /* ── MAIN APP ── */
-const APP_VERSION='4.0.0';
+const APP_VERSION='4.1.0';
 
 /* ── AUTH SCREENS ── */
 const AuthInput=({label,type,value,onChange,placeholder,icon})=>(
@@ -2527,14 +2541,17 @@ const[catFilter,setCatFilter]=useState(null);
 const[location,setLocation]=useState('Surat');
 const[showLocModal,setShowLocModal]=useState(false);
 const[usePoints,setUsePoints]=useState(false);
-const[orders,setOrders]=useState(()=>{try{return JSON.parse(localStorage.getItem('dj_orders'))||[]}catch(e){return[]}});
+const[orders,setOrders]=useState([]);
 const[chatHistory,setChatHistory]=useState(()=>{try{return JSON.parse(localStorage.getItem('dj_chat_history'))||[]}catch(e){return[]}});
 const[darkMode,setDarkMode]=useState(()=>{try{return localStorage.getItem('dj_dark_mode')==='true'}catch(e){return false}});
 const toggleDark=()=>setDarkMode(p=>{const v=!p;try{localStorage.setItem('dj_dark_mode',v)}catch(e){}return v});
-const[family,setFamily]=useState(()=>{try{const s=localStorage.getItem('dj_family');return s?JSON.parse(s):FAMILY_INIT}catch(e){return FAMILY_INIT}});
-const updateFamily=(newFam)=>{setFamily(newFam);try{localStorage.setItem('dj_family',JSON.stringify(newFam))}catch(e){}};
-const[userProfile,setUserProfile]=useState(()=>{try{const s=localStorage.getItem('dj_user_profile');return s?{...USER_INIT,...JSON.parse(s)}:USER_INIT}catch(e){return USER_INIT}});
-const updateUserProfile=(u)=>{setUserProfile(u);try{localStorage.setItem('dj_user_profile',JSON.stringify(u))}catch(e){}};
+const[family,setFamily]=useState([]);
+const[userProfile,setUserProfile]=useState(USER_INIT);
+const[appointments,setAppointments]=useState([]);
+const[dataLoaded,setDataLoaded]=useState(false);
+useEffect(()=>{if(!session)return;const uid=session.user.id;(async()=>{try{const[prof,fam,appts,ords]=await Promise.all([db.loadProfile(uid),db.loadFamily(uid),db.loadAppointments(uid),db.loadOrders(uid)]);const p=db.profileToApp(prof);if(p&&p.name)setUserProfile(prev=>({...prev,...p}));if(fam.length>0)setFamily(fam);if(appts.length>0)setAppointments(appts);if(ords.length>0)setOrders(ords)}catch(e){console.log('DB load error:',e)}setDataLoaded(true)})()},[session]);
+const updateFamily=(newFam)=>{setFamily(newFam);if(session)db.saveFamily(session.user.id,newFam).catch(e=>console.log('DB family save error:',e))};
+const updateUserProfile=(u)=>{setUserProfile(u);if(session)db.saveProfile(session.user.id,u).catch(e=>console.log('DB profile save error:',e))};
 const[showUpdate,setShowUpdate]=useState(false);
 useEffect(()=>{if(splash)return;try{const seen=localStorage.getItem('dj_app_version');if(seen!==APP_VERSION){const t=setTimeout(()=>setShowUpdate(true),400);return()=>clearTimeout(t)}}catch(e){const t=setTimeout(()=>setShowUpdate(true),400);return()=>clearTimeout(t)}},[splash]);
 const scrollRef=useRef(null);
@@ -2601,7 +2618,7 @@ pointsDiscount=usablePts/points.conversion;
 if(usablePts>0)points.redeemPoints(usablePts,'DJ'+Date.now(),'Used on Medicine Order');
 }
 const order={id:'ORD'+Date.now(),items:cart.map(c=>({name:c.name,brand:c.brand,pack:c.pack,price:c.price,qty:c.qty,icon:c.img||'medication'})),total:subtotal-pointsDiscount,pointsSaved:pointsDiscount,status:'confirmed',date:Date.now()};
-setOrders(prev=>{const n=[order,...prev];try{localStorage.setItem('dj_orders',JSON.stringify(n.slice(-20)))}catch(e){}return n});
+setOrders(prev=>[order,...prev]);if(session)db.saveOrder(session.user.id,order).catch(e=>console.log('DB order save error:',e));
 setCart([]);setUsePoints(false);
 showToast('Order placed successfully!'+(pointsDiscount>0?' Saved ₹'+pointsDiscount+' with Jivan Points':''));
 goBack();
@@ -2624,7 +2641,7 @@ case 'doc-detail':return detail?<DoctorDetailScreen item={detail} onBack={goBack
 case 'cart':return <CartScreen cart={cart} onBack={goBack} updateQty={updateQty} removeItem={removeItem} onCheckout={handleCheckout} points={points} usePoints={usePoints} setUsePoints={setUsePoints}/>;
 case 'health-records':return <HealthRecordsScreen onBack={goBack}/>;
 case 'my-orders':return <MyOrdersScreen onBack={goBack} orders={orders} onOrderDetail={(o)=>{setHistory(h=>[...h,screen]);setDetail(o);setScreen('order-detail');if(scrollRef.current)scrollRef.current.scrollTop=0}}/>;
-case 'order-detail':return detail?<OrderDetailScreen onBack={goBack} order={detail} showToast={showToast} onReorder={(items)=>{items.forEach(it=>{const med=MEDICINES.find(m=>m.name===it.name);if(med)addToCart(med)});nav('cart')}} onUpdateOrder={(id,updates)=>{setOrders(prev=>{const n=prev.map(o=>o.id===id?{...o,...updates}:o);try{localStorage.setItem('dj_orders',JSON.stringify(n))}catch(e){}return n});setDetail(prev=>prev&&prev.id===id?{...prev,...updates}:prev)}}/>:null;
+case 'order-detail':return detail?<OrderDetailScreen onBack={goBack} order={detail} showToast={showToast} onReorder={(items)=>{items.forEach(it=>{const med=MEDICINES.find(m=>m.name===it.name);if(med)addToCart(med)});nav('cart')}} onUpdateOrder={(id,updates)=>{setOrders(prev=>prev.map(o=>o.id===id?{...o,...updates}:o));setDetail(prev=>prev&&prev.id===id?{...prev,...updates}:prev);if(session)supabaseClient.from('orders').update({status:updates.status||'confirmed'}).eq('id',id).then(()=>{})}}/>:null;
 case 'membership':return <MembershipScreen onBack={goBack}/>;
 case 'insurance':return <InsuranceScreen onBack={goBack} showToast={showToast}/>;
 case 'telemedicine':return <TelemedicineScreen onBack={goBack}/>;
@@ -2635,8 +2652,8 @@ case 'points-history':return <PointsHistoryScreen onBack={goBack} points={points
 case 'points-rules':return <PointsRulesScreen onBack={goBack}/>;
 case 'ai-chat':return <AIHealthAssistantScreen onBack={goBack} chatHistory={chatHistory} onAskAI={addChatMsg}/>;
 case 'doc-chat':return detail?<DoctorChatScreen doctor={detail} onBack={goBack}/>:null;
-case 'book-appt':return detail?<BookAppointmentScreen doctor={detail} onBack={goBack} showToast={showToast} family={family} userProfile={userProfile}/>:null;
-case 'my-consultations':return <MyConsultationsScreen onBack={goBack} nav={nav}/>;
+case 'book-appt':return detail?<BookAppointmentScreen doctor={detail} onBack={goBack} showToast={showToast} family={family} userProfile={userProfile} session={session} appointments={appointments} setAppointments={setAppointments}/>:null;
+case 'my-consultations':return <MyConsultationsScreen onBack={goBack} nav={nav} session={session} appointments={appointments} setAppointments={setAppointments}/>;
 case 'family-members':return <FamilyMembersScreen family={family} updateFamily={updateFamily} onBack={goBack} showToast={showToast} nav={nav}/>;
 case 'your-profile':return <YourProfileScreen onBack={goBack} userProfile={userProfile} updateUserProfile={updateUserProfile} showToast={showToast}/>;
 case 'family-profile':return detail?<FamilyMemberProfileScreen member={detail} onBack={goBack} family={family} updateFamily={updateFamily} showToast={showToast} userProfile={userProfile}/>:null;
@@ -2986,7 +3003,7 @@ return(
 );};
 
 /* ── SCREEN: BOOK APPOINTMENT ── */
-const BookAppointmentScreen=({doctor,onBack,showToast,family,userProfile})=>{
+const BookAppointmentScreen=({doctor,onBack,showToast,family,userProfile,session,appointments,setAppointments})=>{
 const[patient,setPatient]=useState(userProfile.name);
 const patients=[{name:userProfile.name,label:userProfile.name+' (you)'},...family.map(f=>({name:f.name,label:f.name}))];
 const[selDate,setSelDate]=useState(0);
@@ -2995,7 +3012,7 @@ const dates=[];
 for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()+i);dates.push(d)}
 const fmtD=(d)=>d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
 const times=['10:00 AM','10:15 AM','10:30 AM','10:45 AM','11:00 AM','11:15 AM','11:30 AM','11:45 AM','12:00 PM','12:15 PM','12:30 PM','12:45 PM','1:00 PM','1:15 PM','1:30 PM','1:45 PM','3:00 PM','3:15 PM','3:30 PM','3:45 PM','4:00 PM','4:15 PM','4:30 PM','4:45 PM'];
-const confirm=()=>{if(selTime===null)return;const appt={id:'APT'+Date.now(),doctor:doctor.name,patient,date:dates[selDate].toISOString(),time:times[selTime],status:'confirmed',type:'In-person',bookedAt:Date.now()};try{const prev=JSON.parse(localStorage.getItem('dj_appointments')||'[]');localStorage.setItem('dj_appointments',JSON.stringify([appt,...prev]))}catch(e){}showToast('Appointment booked!');onBack()};
+const confirm=()=>{if(selTime===null)return;const appt={id:'APT'+Date.now(),doctor:doctor.name,patient,date:dates[selDate].toISOString(),time:times[selTime],status:'confirmed',type:'In-person',bookedAt:Date.now()};setAppointments(prev=>[appt,...prev]);if(session)db.saveAppointment(session.user.id,appt).catch(e=>console.log('DB appt save error:',e));showToast('Appointment booked!');onBack()};
 return(
 <div className="fade-in">
 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
@@ -3035,12 +3052,12 @@ return(
 );};
 
 /* ── SCREEN: MY CONSULTATIONS ── */
-const MyConsultationsScreen=({onBack,nav})=>{
+const MyConsultationsScreen=({onBack,nav,session,appointments,setAppointments})=>{
 const[tab,setTab]=useState('appointments');
-const[appts,setAppts]=useState(()=>{try{return JSON.parse(localStorage.getItem('dj_appointments')||'[]')}catch(e){return[]}});
+const appts=appointments;
 const chatDocs=useMemo(()=>{const ids=[];DOCTORS.forEach(d=>{try{const c=JSON.parse(localStorage.getItem('dj_doc_chat_'+d.id)||'[]');if(c.length>0)ids.push({...d,lastMsg:c[c.length-1]})}catch(e){}});return ids},[]);
 const fmtDate=(iso)=>{const d=new Date(iso);return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})+(d.getFullYear()!==new Date().getFullYear()?' '+d.getFullYear():'')};
-const cancelAppt=(id)=>{const n=appts.map(a=>a.id===id?{...a,status:'cancelled'}:a);setAppts(n);try{localStorage.setItem('dj_appointments',JSON.stringify(n))}catch(e){}};
+const cancelAppt=(id)=>{setAppointments(prev=>prev.map(a=>a.id===id?{...a,status:'cancelled'}:a));if(session)db.updateAppointment(id,{status:'cancelled'}).catch(e=>console.log('DB cancel error:',e))};
 return(
 <div className="fade-in">
 <div className="flex items-center justify-between px-4 py-3">
